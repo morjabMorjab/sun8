@@ -321,6 +321,8 @@ NGINXEOF
 # Enable Nginx configuration
 ln -sf /etc/nginx/sites-available/{PM2_NAME} /etc/nginx/sites-enabled/{PM2_NAME}
 rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+rm -f /etc/nginx/sites-enabled/equipy 2>/dev/null || true
+rm -f /etc/nginx/sites-available/equipy 2>/dev/null || true
 
 # Test Nginx and reload
 nginx -t && systemctl reload nginx
@@ -467,6 +469,8 @@ echo "STORAGE_PRESERVED_OK"
         print(f"   🗑️ Completely wiping old directory while preserving database...")
         clean_cmd = f"""
 # Stop PM2
+pm2 stop equipy 2>/dev/null || true
+pm2 delete equipy 2>/dev/null || true
 pm2 stop sun8 2>/dev/null || true
 pm2 delete sun8 2>/dev/null || true
 pm2 save
@@ -642,6 +646,7 @@ echo 'BUILD_AND_RESTORE_DONE'
     print("   🔄 Launching application via PM2...")
     pm2_cmd = f"""
 cd {REMOTE_INSTALL_DIR}
+pm2 delete equipy 2>/dev/null || true
 pm2 delete {PM2_NAME} 2>/dev/null || true
 pm2 start dist/server.cjs --name {PM2_NAME} --time
 pm2 save
