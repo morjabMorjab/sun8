@@ -1,0 +1,6 @@
+{
+  "name": "Equipy Medical Marketplace",
+  "description": "The most professional and comprehensive platform for medical centers, doctors, and patients to rent surgical equipment, hospital hoteling, and traditional medicine tools (sun8.ir - سان ۸).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
