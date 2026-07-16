@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                    SUN8 APP - PROFESSIONAL DEPLOYER (v2.0)                  ║
+║                   EQUIPY APP - PROFESSIONAL DEPLOYER (v2.0)                 ║
 ║                                                                              ║
 ║  Features:                                                                   ║
 ║  1. Zero Data Loss: Keeps and restores dynamic uploads (images) automatically.║
@@ -48,13 +48,13 @@ VPS_IP = "45.159.150.250"
 SSH_USER = "root"
 SSH_KEY_PATH = os.path.expanduser("~/.ssh/bazar_prikey.pem")
 LOCAL_PROJECT_PATH = "/storage/emulated/0/Download/sun8-main"
-REMOTE_INSTALL_DIR = "/var/www/sun8"
+REMOTE_INSTALL_DIR = "/var/www/equipy"
 DOMAIN_NAME = "sun8.ir"
 PORT = 3001
 DB_NAME = "sun8"
 DB_USER = "sun8_user"
 DB_PASS = ""
-PM2_NAME = "sun8"
+PM2_NAME = "equipy"
 
 DB_ROOT_PASS = "" # If MySQL root has no password, keep empty
 
@@ -74,7 +74,7 @@ C_RESET = "\033[0m"
 
 def print_banner():
     print(C_CYAN + C_BOLD + "=" * 80 + C_RESET)
-    print(C_CYAN + C_BOLD + "  🚀 SUN8 APP PROFESSIONAL DEPLOYER v2.0" + C_RESET)
+    print(C_CYAN + C_BOLD + "  🚀 EQUIPY/SUN8 APP PROFESSIONAL DEPLOYER v2.0" + C_RESET)
     print(C_CYAN + "  Keep your production data safe, secure, and always-on" + C_RESET)
     print(C_CYAN + C_BOLD + "=" * 80 + C_RESET)
 
@@ -164,7 +164,7 @@ COMING_SOON_HTML = """<!DOCTYPE html>
 
 def generate_coming_soon():
     """Generates a beautiful Coming Soon page on the remote VPS."""
-    print(f"\\n{C_BOLD}📄 Generating Elegant Coming Soon Page...{C_RESET}")
+    print(f"\n{C_BOLD}📄 Generating Elegant Coming Soon Page...{C_RESET}")
     run_ssh(f"mkdir -p {REMOTE_INSTALL_DIR}/dist")
     
     write_html_cmd = f"""cat << 'EOF' > {REMOTE_INSTALL_DIR}/dist/index.html
@@ -181,7 +181,7 @@ EOF
 
 def run_isolation_checks():
     """Performs HTTP host-header based curls to verify isolated routing on the VPS."""
-    print(f"\\n{C_BOLD}🔍 Performing independent isolation testing...{C_RESET}")
+    print(f"\n{C_BOLD}🔍 Performing independent isolation testing...{C_RESET}")
     
     # Curl Sun8 host header
     print(f"   🌐 Curling local web server with Host: {C_BOLD}sun8.ir{C_RESET}...")
@@ -194,17 +194,17 @@ def run_isolation_checks():
     print(f"      Result: {C_CYAN}{curl_bazar}...{C_RESET}")
 
     # Integrity verification
-    print(f"\\n{C_BOLD}================================================================================{C_RESET}")
+    print(f"\n{C_BOLD}================================================================================{C_RESET}")
     print(f"  {C_GREEN}{C_BOLD}🎉 INTEGRITY CHECKS SUCCESSFUL!{C_RESET}")
     print(f"================================================================================{C_RESET}")
     print(f"   ✅ {C_BOLD}shahrakbazar.ir{C_RESET} remains active on Port 3000 (Bazar process untouched)")
     print(f"   ✅ {C_BOLD}sun8.ir{C_RESET} is cleanly mapped on Port 80, routing API requests to Port {PORT}")
     print(f"   ✅ Both applications are completely decoupled and running concurrently.")
-    print(f"================================================================================\\n")
+    print(f"================================================================================\n")
 
 def configure_nginx_flow(args):
     """Generates, deploys, and verifies Nginx configuration on the VPS."""
-    print(f"\\n{C_BOLD}🛡️ Configuring isolated Nginx routing for {DOMAIN_NAME}...{C_RESET}")
+    print(f"\n{C_BOLD}🛡️ Configuring isolated Nginx routing for {DOMAIN_NAME}...{C_RESET}")
     
     # Check for Let's Encrypt certificates automatically on the server
     check_ssl_cmd = f"[ -f '/etc/letsencrypt/live/{DOMAIN_NAME}/fullchain.pem' ] && echo 'SSL_FOUND' || echo 'NO_SSL'"
@@ -340,7 +340,7 @@ def main():
     print_banner()
 
     # Define arguments
-    parser = argparse.ArgumentParser(description="Professional Deployer for Sun8 Application")
+    parser = argparse.ArgumentParser(description="Professional Deployer for Equipy/Sun8 Application")
     parser.add_argument("--fresh", action="store_true", help="Perform a destructive fresh install (wipes DB & uploads)")
     parser.add_argument("--backup", action="store_true", help="Perform a manual DB backup before deployment")
     parser.add_argument("--no-ssl", action="store_true", help="Force plain HTTP port 80 configuration without SSL")
@@ -384,8 +384,8 @@ def main():
     
     # Prepare remote directories
     ssh_prepare = f"""
-mkdir -p /var/backups/sun8/uploads
-mkdir -p /var/backups/sun8/db
+mkdir -p /var/backups/equipy/uploads
+mkdir -p /var/backups/equipy/db
 """
     run_ssh(ssh_prepare)
 
@@ -393,7 +393,7 @@ mkdir -p /var/backups/sun8/db
     db_backup_success = False
     if args.backup or not args.fresh:
         print(f"   📥 Backing up remote MySQL database '{DB_NAME}' to server backups...")
-        backup_file = f"/var/backups/sun8/db/backup_{int(time.time())}.sql"
+        backup_file = f"/var/backups/equipy/db/backup_{int(time.time())}.sql"
         # Attempt mysqldump
         dump_cmd = f"mysqldump --single-transaction -u {DB_USER} -p'{DB_PASS}' {DB_NAME} > {backup_file} 2>/dev/null"
         _, err, code = run_ssh(dump_cmd)
@@ -421,8 +421,8 @@ mkdir -p /var/backups/sun8/db
             print(f"   📦 Found existing uploads. Moving to safekeeping backup directory...")
             # Clean old backups, then move current uploads there
             backup_uploads_cmd = f"""
-rm -rf /var/backups/sun8/uploads_temp
-cp -rp {REMOTE_INSTALL_DIR}/public/uploads /var/backups/sun8/uploads_temp
+rm -rf /var/backups/equipy/uploads_temp
+cp -rp {REMOTE_INSTALL_DIR}/public/uploads /var/backups/equipy/uploads_temp
 echo "PRESERVED_OK"
 """
             res_out, _, _ = run_ssh(backup_uploads_cmd)
@@ -444,8 +444,8 @@ echo "PRESERVED_OK"
         if out_storage == "EXISTS":
             print(f"   📦 Found existing storage database. Moving to safekeeping backup directory...")
             backup_storage_cmd = f"""
-rm -rf /var/backups/sun8/storage_temp
-cp -rp {REMOTE_INSTALL_DIR}/storage /var/backups/sun8/storage_temp
+rm -rf /var/backups/equipy/storage_temp
+cp -rp {REMOTE_INSTALL_DIR}/storage /var/backups/equipy/storage_temp
 echo "STORAGE_PRESERVED_OK"
 """
             res_out_storage, _, _ = run_ssh(backup_storage_cmd)
@@ -467,8 +467,8 @@ echo "STORAGE_PRESERVED_OK"
         print(f"   🗑️ Completely wiping old directory while preserving database...")
         clean_cmd = f"""
 # Stop PM2
-pm2 stop sun8 2>/dev/null || true
-pm2 delete sun8 2>/dev/null || true
+pm2 stop equipy 2>/dev/null || true
+pm2 delete equipy 2>/dev/null || true
 pm2 save
 
 # Database is safely preserved to protect production data as per requirements
@@ -515,8 +515,8 @@ mkdir -p {REMOTE_INSTALL_DIR}
 echo '--- RESTORING DYNAMIC UPLOADS ---'
 mkdir -p {REMOTE_INSTALL_DIR}/public
 rm -rf {REMOTE_INSTALL_DIR}/public/uploads
-cp -rp /var/backups/sun8/uploads_temp {REMOTE_INSTALL_DIR}/public/uploads
-rm -rf /var/backups/sun8/uploads_temp
+cp -rp /var/backups/equipy/uploads_temp {REMOTE_INSTALL_DIR}/public/uploads
+rm -rf /var/backups/equipy/uploads_temp
 """
     else:
         restore_uploads_script = f"""
@@ -529,8 +529,8 @@ mkdir -p {REMOTE_INSTALL_DIR}/public/uploads/categories
         restore_storage_script = f"""
 echo '--- RESTORING STORAGE DATABASE ---'
 rm -rf {REMOTE_INSTALL_DIR}/storage
-cp -rp /var/backups/sun8/storage_temp {REMOTE_INSTALL_DIR}/storage
-rm -rf /var/backups/sun8/storage_temp
+cp -rp /var/backups/equipy/storage_temp {REMOTE_INSTALL_DIR}/storage
+rm -rf /var/backups/equipy/storage_temp
 """
     else:
         restore_storage_script = f"""
@@ -633,7 +633,7 @@ echo 'BUILD_AND_RESTORE_DONE'
     # ═══════════════════════════════════════════
     # STEP 5: SMART NGINX (SSL-AWARE) & PM2 BOOT
     # ═══════════════════════════════════════════
-    print(f"\\n{C_BOLD}[5/5] Smart Nginx, SSL config, and PM2 Process Launch...{C_RESET}")
+    print(f"\n{C_BOLD}[5/5] Smart Nginx, SSL config, and PM2 Process Launch...{C_RESET}")
 
     # A. Run Nginx configuration flow
     nginx_success, has_ssl = configure_nginx_flow(args)
@@ -659,7 +659,7 @@ pm2 save
     health_out, _, _ = run_ssh(health_check_cmd)
     
     print("\n" + "=" * 80)
-    print(f"  {C_GREEN}{C_BOLD}🎉 SUN8 APPLICATION SUCCESSFULLY DEPLOYED!{C_RESET}")
+    print(f"  {C_GREEN}{C_BOLD}🎉 SUN8 APPLICATION SUCCESSFULLY DEPLOYED TO EQUIPY PATH!{C_RESET}")
     print("=" * 80)
     print(f"  🌐 {C_BOLD}Main Website:{C_RESET} https://{DOMAIN_NAME} (or http://{VPS_IP})")
     
@@ -669,12 +669,12 @@ pm2 save
         print(f"  ❤️  {C_YELLOW}API Health Check: Not responding to localhost:{PORT} (Check 'pm2 logs {PM2_NAME}' if page is blank){C_RESET}")
     
     if not has_ssl and not args.no_ssl:
-        print("\\n  🛡️  " + C_YELLOW + C_BOLD + "Want to enable Free SSL? Just run this command on your VPS:" + C_RESET)
+        print("\n  🛡️  " + C_YELLOW + C_BOLD + "Want to enable Free SSL? Just run this command on your VPS:" + C_RESET)
         print(f"     {C_CYAN}ssh -i ~/.ssh/bazar_prikey.pem root@{VPS_IP} 'certbot --nginx -d {DOMAIN_NAME} -d www.{DOMAIN_NAME}'{C_RESET}")
         print("     The deployer will automatically preserve your secure settings next time!")
     
     print(f"  📂 {C_BOLD}Static upload paths protected and verified.{C_RESET}")
-    print("=" * 80 + "\\n")
+    print("=" * 80 + "\n")
 
     # Run routing separation curls
     run_isolation_checks()

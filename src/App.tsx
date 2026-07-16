@@ -39,7 +39,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import AuthView from "./components/AuthView.tsx";
 
-// Types for Equipy AliExpress-style Mobile App
+// Types for Sun8 AliExpress-style Mobile App
 interface Product {
   id: number;
   title: string;
