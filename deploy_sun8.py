@@ -47,13 +47,13 @@ load_local_env(SPECIFIC_ENV_PATH)
 VPS_IP = "45.159.150.250"
 SSH_USER = "root"
 SSH_KEY_PATH = os.path.expanduser("~/.ssh/bazar_prikey.pem")
-LOCAL_PROJECT_PATH = "/storage/emulated/0/Download/sun8-main"
+LOCAL_PROJECT_PATH = "/storage/emulated/0/Download/equipy-main"
 REMOTE_INSTALL_DIR = "/var/www/sun8"
 DOMAIN_NAME = "sun8.ir"
 PORT = 3001
-DB_NAME = "sun8"
-DB_USER = "sun8_user"
-DB_PASS = ""
+DB_NAME = "equipy"
+DB_USER = "equipy_user"
+DB_PASS = "Equipy_2024_Secure!"
 PM2_NAME = "sun8"
 
 DB_ROOT_PASS = "" # If MySQL root has no password, keep empty
@@ -320,7 +320,7 @@ NGINXEOF
 
 # Enable Nginx configuration
 ln -sf /etc/nginx/sites-available/{PM2_NAME} /etc/nginx/sites-enabled/{PM2_NAME}
-rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-enabled/equipy 2>/dev/null || true
 
 # Test Nginx and reload
 nginx -t && systemctl reload nginx
@@ -382,8 +382,20 @@ def main():
     # ═══════════════════════════════════════════
     print(f"\n{C_BOLD}[1/5] Checking and preserving production data...{C_RESET}")
     
-    # Prepare remote directories
+    # Prepare remote directories and handle renaming/cleaning of legacy equipy
+    print("   🧹 Stopping legacy equipy service and renaming workspace if needed...")
     ssh_prepare = f"""
+# Move legacy directory if present
+if [ -d "/var/www/equipy" ] && [ ! -d "{REMOTE_INSTALL_DIR}" ]; then
+    mv /var/www/equipy {REMOTE_INSTALL_DIR}
+fi
+
+# Stop and delete legacy PM2 processes
+pm2 stop equipy 2>/dev/null || true
+pm2 delete equipy 2>/dev/null || true
+pm2 save 2>/dev/null || true
+
+# Prepare backups
 mkdir -p /var/backups/sun8/uploads
 mkdir -p /var/backups/sun8/db
 """
