@@ -47,7 +47,7 @@ load_local_env(SPECIFIC_ENV_PATH)
 VPS_IP = "45.159.150.250"
 SSH_USER = "root"
 SSH_KEY_PATH = os.path.expanduser("~/.ssh/bazar_prikey.pem")
-LOCAL_PROJECT_PATH = "/storage/emulated/0/Download/equipy-main"
+LOCAL_PROJECT_PATH = "/storage/emulated/0/Download/sun8-main"
 REMOTE_INSTALL_DIR = "/var/www/sun8"
 DOMAIN_NAME = "sun8.ir"
 PORT = 3001
