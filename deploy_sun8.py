@@ -573,9 +573,9 @@ chown -R www-data:www-data {REMOTE_INSTALL_DIR}/storage 2>/dev/null || true
 
 # 2. Database Initialization
 echo '--- SYSTEM DATABASE SETUP ---'
-mysql -u root -e \"CREATE DATABASE IF NOT EXISTS {DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\"
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS {DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 mysql -u root {DB_NAME} < schema.sql
-mysql -u root -e \"CREATE USER IF NOT EXISTS '{DB_USER}'@'localhost' IDENTIFIED BY '{DB_PASS}'; GRANT ALL ON {DB_NAME}.* TO '{DB_USER}'@'localhost'; FLUSH PRIVILEGES;\"
+mysql -u root -e "CREATE USER IF NOT EXISTS '{DB_USER}'@'localhost' IDENTIFIED BY '{DB_PASS}'; ALTER USER '{DB_USER}'@'localhost' IDENTIFIED BY '{DB_PASS}'; GRANT ALL PRIVILEGES ON {DB_NAME}.* TO '{DB_USER}'@'localhost'; FLUSH PRIVILEGES;"
 
 # 3. Environment Config Setup
 echo '--- WRITING ENV CONFIGURATION ---'
