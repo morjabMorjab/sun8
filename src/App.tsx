@@ -34,7 +34,9 @@ import {
   Bell,
   Users,
   ShoppingBag,
-  Grid
+  Grid,
+  Bookmark,
+  Share2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import AuthView from "./components/AuthView.tsx";
@@ -551,6 +553,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("home");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCity, setSelectedCity] = useState("تهران و حومه");
+  const [bookmarkedIds, setBookmarkedIds] = useState<number[]>([]);
 
   // Load cached user session on mount
   useEffect(() => {
@@ -917,6 +920,48 @@ export default function App() {
                     }`}>
                       {product.id % 3 === 0 ? "موجود" : product.id % 3 === 1 ? "ویژه" : "تضمینی"}
                     </span>
+                    <div className="absolute top-2 left-2 flex items-center gap-1 z-10">
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setBookmarkedIds(prev => 
+                            prev.includes(product.id) ? prev.filter(id => id !== product.id) : [...prev, product.id]
+                          );
+                        }}
+                        className="bg-white/90 backdrop-blur-sm p-1.5 rounded-full text-slate-400 hover:text-sky-500 transition-all shadow-sm focus:outline-none"
+                        title="نشان کردن"
+                      >
+                        <Bookmark className={`w-3.5 h-3.5 ${bookmarkedIds.includes(product.id) ? "fill-sky-500 text-sky-500" : ""}`} />
+                      </button>
+                      <button
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const shareUrl = window.location.origin + "/product/" + product.id;
+                          if (navigator.share) {
+                            try {
+                              await navigator.share({
+                                title: product.title,
+                                text: `مشاهده محصول ${product.title} در فروشگاه`,
+                                url: shareUrl,
+                              });
+                            } catch (err) {
+                              if ((err as Error).name !== 'AbortError') {
+                                console.error("Error sharing:", err);
+                              }
+                            }
+                          } else {
+                            navigator.clipboard.writeText(shareUrl);
+                            alert("لینک کپی شد!");
+                          }
+                        }}
+                        className="bg-white/90 backdrop-blur-sm p-1.5 rounded-full text-slate-400 hover:text-indigo-500 transition-all shadow-sm focus:outline-none"
+                        title="اشتراک‌گذاری"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <div className="flex flex-col gap-1 pt-2">
                     <h4 className="text-[11px] font-semibold text-gray-800 px-2.5 leading-tight text-right w-full truncate">{product.title}</h4>

@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Shield, Package, ShoppingCart, Calendar, BadgeCheck } from "lucide-react";
+import { Shield, Package, ShoppingCart, Calendar, BadgeCheck, Bookmark, Share2 } from "lucide-react";
 import { Product } from "../types";
 
 interface ProductCardProps {
@@ -10,6 +10,8 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ product, onAddToCart }: ProductCardProps) {
+  const [isBookmarked, setIsBookmarked] = React.useState(false);
+
   const certificationsList = product.certifications
     .split(",")
     .map((c) => c.trim())
@@ -41,6 +43,49 @@ export default function ProductCard({ product, onAddToCart }: ProductCardProps) 
           }}
         />
         
+        {/* Action Buttons */}
+        <div className="absolute top-3 right-3 z-10 flex flex-col gap-2">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsBookmarked(!isBookmarked);
+            }}
+            className="p-2 rounded-full bg-white/90 backdrop-blur-sm text-slate-400 hover:text-sky-500 hover:bg-white transition-all shadow-sm focus:outline-none"
+            title="نشان کردن"
+          >
+            <Bookmark className={`h-4 w-4 ${isBookmarked ? "fill-sky-500 text-sky-500" : ""}`} />
+          </button>
+          
+          <button
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const shareUrl = window.location.origin + "/product/" + product.id;
+              if (navigator.share) {
+                try {
+                  await navigator.share({
+                    title: product.title,
+                    text: `مشاهده محصول ${product.title} در فروشگاه`,
+                    url: shareUrl,
+                  });
+                } catch (err) {
+                  if ((err as Error).name !== 'AbortError') {
+                    console.error("Error sharing:", err);
+                  }
+                }
+              } else {
+                navigator.clipboard.writeText(shareUrl);
+                alert("لینک کپی شد!");
+              }
+            }}
+            className="p-2 rounded-full bg-white/90 backdrop-blur-sm text-slate-400 hover:text-indigo-500 hover:bg-white transition-all shadow-sm focus:outline-none"
+            title="اشتراک‌گذاری"
+          >
+            <Share2 className="h-4 w-4" />
+          </button>
+        </div>
+
         {/* Absolute Badges on Image */}
         <div className="absolute top-3 left-3 flex flex-col gap-1.5 items-start">
           <span className={`inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider shadow-sm ${conditionColors[product.condition]}`}>
