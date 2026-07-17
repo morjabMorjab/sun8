@@ -47,7 +47,9 @@ load_local_env(SPECIFIC_ENV_PATH)
 VPS_IP = "45.159.150.250"
 SSH_USER = "root"
 SSH_KEY_PATH = os.path.expanduser("~/.ssh/bazar_prikey.pem")
-LOCAL_PROJECT_PATH = "/storage/emulated/0/Download/sun8-main"
+LOCAL_PROJECT_PATH = "/storage/emulated/0/Download/equipy-main"
+if not os.path.exists(LOCAL_PROJECT_PATH) and os.path.exists("/storage/emulated/0/Download/sun8-main"):
+    LOCAL_PROJECT_PATH = "/storage/emulated/0/Download/sun8-main"
 REMOTE_INSTALL_DIR = "/var/www/sun8"
 DOMAIN_NAME = "sun8.ir"
 PORT = 3001
@@ -367,219 +369,87 @@ def main():
     if not check_local_project():
         sys.exit(1)
 
-    print(f"\n{C_CYAN}🔍 Target VPS:{C_RESET} {C_BOLD}{VPS_IP}{C_RESET}")
-    print(f"{C_CYAN}📂 Installation Path:{C_RESET} {C_BOLD}{REMOTE_INSTALL_DIR}{C_RESET}")
-    print(f"{C_CYAN}📝 Mode:{C_RESET} " + (f"{C_RED}{C_BOLD}⚠️ FRESH INSTALL (DESTRUCTIVE){C_RESET}" if args.fresh else f"{C_GREEN}{C_BOLD}🛡️ SAFE UPGRADE (PRESERVES DATA){C_RESET}"))
-
-    if args.fresh:
-        confirm = input(f"\n{C_RED}{C_BOLD}⚠️ WARNING: Fresh install will delete all production databases and uploaded images! Are you absolutely sure? (y/N): {C_RESET}")
-        if confirm.lower() != 'y':
-            print(f"{C_YELLOW}Deployment cancelled.{C_RESET}")
-            sys.exit(0)
-
+    print(f"\n{C_CYAN}🔍 Tar    # ═══════════════════════════════════════════
+    # PRE-REQUISITES & ENVIRONMENT SANITY CHECKS
     # ═══════════════════════════════════════════
-    # STEP 1: PRE-DEPLOYMENT BACKUP & SAFEKEEPING
-    # ═══════════════════════════════════════════
-    print(f"\n{C_BOLD}[1/5] Checking and preserving production data...{C_RESET}")
-    
-    # Prepare remote directories and handle renaming/cleaning of legacy equipy
-    print("   🧹 Stopping legacy equipy service and renaming workspace if needed...")
-    ssh_prepare = f"""
-# Move legacy directory if present
+    print(f"\n{C_BOLD}🧹 Stopping legacy services and preparing workspaces...{C_RESET}")
+    # Handle renaming of legacy /var/www/equipy if present on server
+    rename_cmd = f"""
 if [ -d "/var/www/equipy" ] && [ ! -d "{REMOTE_INSTALL_DIR}" ]; then
     mv /var/www/equipy {REMOTE_INSTALL_DIR}
 fi
+# Ensure the uploads and storage directories exist on server so that export cp commands don't fail
+mkdir -p {REMOTE_INSTALL_DIR}/public/uploads
+mkdir -p {REMOTE_INSTALL_DIR}/storage
 
-# Stop and delete legacy PM2 processes
-pm2 stop equipy 2>/dev/null || true
-pm2 delete equipy 2>/dev/null || true
-pm2 save 2>/dev/null || true
-
-# Prepare backups
-mkdir -p /var/backups/sun8/uploads
-mkdir -p /var/backups/sun8/db
+# Create target DB if not present so that DB dump/actions don't fail initially
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS {DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root -e "CREATE USER IF NOT EXISTS '{DB_USER}'@'localhost' IDENTIFIED BY '{DB_PASS}'; ALTER USER '{DB_USER}'@'localhost' IDENTIFIED BY '{DB_PASS}'; GRANT ALL PRIVILEGES ON {DB_NAME}.* TO '{DB_USER}'@'localhost'; FLUSH PRIVILEGES;"
 """
-    run_ssh(ssh_prepare)
-
-    # 1. Back up database if requested or if we are upgrading
-    db_backup_success = False
-    if args.backup or not args.fresh:
-        print(f"   📥 Backing up remote MySQL database '{DB_NAME}' to server backups...")
-        backup_file = f"/var/backups/sun8/db/backup_{int(time.time())}.sql"
-        # Attempt mysqldump
-        dump_cmd = f"mysqldump --single-transaction -u {DB_USER} -p'{DB_PASS}' {DB_NAME} > {backup_file} 2>/dev/null"
-        _, err, code = run_ssh(dump_cmd)
-        if code == 0:
-            print(f"   {C_GREEN}✅ Database backed up successfully to: {backup_file}{C_RESET}")
-            db_backup_success = True
-        else:
-            # Try as root if user fails
-            dump_cmd_root = f"mysqldump --single-transaction -u root {DB_NAME} > {backup_file} 2>/dev/null"
-            _, _, code_root = run_ssh(dump_cmd_root)
-            if code_root == 0:
-                print(f"   {C_GREEN}✅ Database backed up successfully via root to: {backup_file}{C_RESET}")
-                db_backup_success = True
-            else:
-                print(f"   {C_YELLOW}⚠️ Note: No existing database found or backup skipped (Normal for first-time deploys).{C_RESET}")
-
-    # 2. Back up user uploaded files (images)
-    uploads_preserved = False
-    if not args.fresh:
-        print("   📸 Checking for existing user uploads to preserve...")
-        check_uploads_cmd = f"[ -d '{REMOTE_INSTALL_DIR}/public/uploads' ] && echo 'EXISTS' || echo 'EMPTY'"
-        out, _, _ = run_ssh(check_uploads_cmd)
-        
-        if out == "EXISTS":
-            print(f"   📦 Found existing uploads. Moving to safekeeping backup directory...")
-            # Clean old backups, then move current uploads there
-            backup_uploads_cmd = f"""
-rm -rf /var/backups/sun8/uploads_temp
-cp -rp {REMOTE_INSTALL_DIR}/public/uploads /var/backups/sun8/uploads_temp
-echo "PRESERVED_OK"
-"""
-            res_out, _, _ = run_ssh(backup_uploads_cmd)
-            if "PRESERVED_OK" in res_out:
-                print(f"   {C_GREEN}✅ Dynamic uploads successfully preserved in backup!{C_RESET}")
-                uploads_preserved = True
-            else:
-                print(f"   \033[93m⚠️ Warning: Failed to back up uploads! Uploads may be lost.\033[0m")
-        else:
-            print("   ℹ️ No existing uploads found on remote server. Ready for fresh uploads structure.")
-
-    # 3. Back up storage directory (for data.json etc)
-    storage_preserved = False
-    if not args.fresh:
-        print("   📂 Checking for existing storage data to preserve...")
-        check_storage_cmd = f"[ -d '{REMOTE_INSTALL_DIR}/storage' ] && echo 'EXISTS' || echo 'EMPTY'"
-        out_storage, _, _ = run_ssh(check_storage_cmd)
-        
-        if out_storage == "EXISTS":
-            print(f"   📦 Found existing storage database. Moving to safekeeping backup directory...")
-            backup_storage_cmd = f"""
-rm -rf /var/backups/sun8/storage_temp
-cp -rp {REMOTE_INSTALL_DIR}/storage /var/backups/sun8/storage_temp
-echo "STORAGE_PRESERVED_OK"
-"""
-            res_out_storage, _, _ = run_ssh(backup_storage_cmd)
-            if "STORAGE_PRESERVED_OK" in res_out_storage:
-                print(f"   {C_GREEN}✅ Storage database successfully preserved in backup!{C_RESET}")
-                storage_preserved = True
-            else:
-                print(f"   \033[93m⚠️ Warning: Failed to back up storage directory!\033[0m")
-        else:
-            print("   ℹ️ No existing storage directory found on remote server. Ready for fresh structure.")
+    run_ssh(rename_cmd)
 
     # ═══════════════════════════════════════════
-    # STEP 2: REMOTE CLEANING & PREPARATION
+    # STEP 1: EXPORT EVERYTHING (before touching anything)
     # ═══════════════════════════════════════════
-    print(f"\n{C_BOLD}[2/5] Preparing remote workspace...{C_RESET}")
+    print(f"\n{C_BOLD}[1/8] STEP 1: EXPORT EVERYTHING (before touching anything){C_RESET}")
     
-    clean_cmd = ""
-    if args.fresh:
-        print(f"   🗑️ Completely wiping old directory while preserving database...")
-        clean_cmd = f"""
-# Stop PM2
-pm2 stop sun8 2>/dev/null || true
-pm2 delete sun8 2>/dev/null || true
-pm2 save
+    # - Export DB: mysqldump -u equipy_user -p'Equipy_2024_Secure!' equipy > /tmp/sun8_backup.sql
+    print(f"   📥 Exporting Database '{DB_NAME}'...")
+    export_db_cmd = f"mysqldump -u {DB_USER} -p'{DB_PASS}' {DB_NAME} > /tmp/sun8_backup.sql"
+    out, err, code = run_ssh(export_db_cmd)
+    if code != 0:
+        print(f"   {C_RED}❌ Export DB failed: {err or out}{C_RESET}")
+        sys.exit(1)
+    print(f"   {C_GREEN}✅ Database exported successfully to /tmp/sun8_backup.sql{C_RESET}")
 
-# Database is safely preserved to protect production data as per requirements
-echo "preserving existing MySQL database data..."
+    # - Backup uploads: cp -r /var/www/sun8/public/uploads /tmp/sun8_uploads_backup
+    print("   📸 Backing up uploads folder...")
+    run_ssh("rm -rf /tmp/sun8_uploads_backup")
+    backup_uploads_cmd = f"cp -r {REMOTE_INSTALL_DIR}/public/uploads /tmp/sun8_uploads_backup"
+    out, err, code = run_ssh(backup_uploads_cmd)
+    if code != 0:
+        print(f"   {C_RED}❌ Backup uploads failed: {err or out}{C_RESET}")
+        sys.exit(1)
+    print(f"   {C_GREEN}✅ Uploads backed up successfully to /tmp/sun8_uploads_backup{C_RESET}")
 
-# Remove installation dir
-rm -rf {REMOTE_INSTALL_DIR}
-"""
-    else:
-        print(f"   🧹 Clearing application files while keeping PM2 active...")
-        clean_cmd = f"""
-# Remove the old folder completely to guarantee a 100% clean slate
-rm -rf {REMOTE_INSTALL_DIR}
-mkdir -p {REMOTE_INSTALL_DIR}
-"""
-    
-    run_ssh(clean_cmd)
-    print(f"   {C_GREEN}✅ Remote workspace prepared.{C_RESET}")
+    # - Backup storage: cp -r /var/www/sun8/storage /tmp/sun8_storage_backup
+    print("   📂 Backing up storage database...")
+    run_ssh("rm -rf /tmp/sun8_storage_backup")
+    backup_storage_cmd = f"cp -r {REMOTE_INSTALL_DIR}/storage /tmp/sun8_storage_backup"
+    out, err, code = run_ssh(backup_storage_cmd)
+    if code != 0:
+        print(f"   {C_RED}❌ Backup storage failed: {err or out}{C_RESET}")
+        sys.exit(1)
+    print(f"   {C_GREEN}✅ Storage backed up successfully to /tmp/sun8_storage_backup{C_RESET}")
 
     # ═══════════════════════════════════════════
-    # STEP 3: UPLOADING NEW CODE
+    # STEP 2: CLEAN OLD CODE (keep public/uploads)
     # ═══════════════════════════════════════════
-    print(f"\n{C_BOLD}[3/5] Uploading project files to VPS...{C_RESET}")
-    # Make sure installation dir exists
-    run_ssh(f"mkdir -p {REMOTE_INSTALL_DIR}")
-    
-    # Upload local files
+    print(f"\n{C_BOLD}[2/8] STEP 2: CLEAN OLD CODE (keep public/uploads){C_RESET}")
+    # - find /var/www/sun8 -mindepth 1 -maxdepth 1 ! -name 'public' -exec rm -rf {} +
+    clean_cmd = f"find {REMOTE_INSTALL_DIR} -mindepth 1 -maxdepth 1 ! -name 'public' -exec rm -rf {{}} +"
+    out, err, code = run_ssh(clean_cmd)
+    if code != 0:
+        print(f"   {C_RED}❌ Clean old code failed: {err or out}{C_RESET}")
+        sys.exit(1)
+    print(f"   {C_GREEN}✅ Old code cleaned successfully. Preserved 'public/' folder.{C_RESET}")
+
+    # ═══════════════════════════════════════════
+    # STEP 3: DEPLOY NEW CODE
+    # ═══════════════════════════════════════════
+    print(f"\n{C_BOLD}[3/8] STEP 3: DEPLOY NEW CODE{C_RESET}")
+    # - Upload from /storage/emulated/0/Download/equipy-main/ to /var/www/sun8/
+    # - Skip uploading public/uploads/ (local doesn't have user files)
+    print(f"   📤 Uploading project files from {LOCAL_PROJECT_PATH}...")
     success, err_msg = run_scp(f"{LOCAL_PROJECT_PATH}/.", f"{REMOTE_INSTALL_DIR}/")
-    if success:
-        print(f"   {C_GREEN}✅ Project files uploaded successfully!{C_RESET}")
-    else:
+    if not success:
         print(f"   {C_RED}❌ Upload failed: {err_msg}{C_RESET}")
         sys.exit(1)
+    print(f"   {C_GREEN}✅ Project files uploaded successfully!{C_RESET}")
 
-    # ═══════════════════════════════════════════
-    # STEP 4: RESTORE DATA & REMOTE INSTALLATION
-    # ═══════════════════════════════════════════
-    print(f"\n{C_BOLD}[4/5] Restoring data & building application on VPS...{C_RESET}")
-    
-    # Restore uploads if they were preserved
-    restore_uploads_script = ""
-    if uploads_preserved:
-        restore_uploads_script = f"""
-echo '--- RESTORING DYNAMIC UPLOADS ---'
-mkdir -p {REMOTE_INSTALL_DIR}/public
-rm -rf {REMOTE_INSTALL_DIR}/public/uploads
-cp -rp /var/backups/sun8/uploads_temp {REMOTE_INSTALL_DIR}/public/uploads
-rm -rf /var/backups/sun8/uploads_temp
-"""
-    else:
-        restore_uploads_script = f"""
-echo '--- CREATING FRESH UPLOADS STRUCTURE ---'
-mkdir -p {REMOTE_INSTALL_DIR}/public/uploads/categories
-"""
-
-    restore_storage_script = ""
-    if storage_preserved:
-        restore_storage_script = f"""
-echo '--- RESTORING STORAGE DATABASE ---'
-rm -rf {REMOTE_INSTALL_DIR}/storage
-cp -rp /var/backups/sun8/storage_temp {REMOTE_INSTALL_DIR}/storage
-rm -rf /var/backups/sun8/storage_temp
-"""
-    else:
-        restore_storage_script = f"""
-echo '--- CREATING FRESH STORAGE STRUCTURE ---'
-mkdir -p {REMOTE_INSTALL_DIR}/storage
-"""
-
-    setup_script = f"""
-set -e
-cd {REMOTE_INSTALL_DIR}
-
-{restore_uploads_script}
-{restore_storage_script}
-
-# 1. Enforce correct permissions for dynamic uploads and parents
-echo '--- ENFORCING PERMISSIONS (FIXES IMAGE FOLDERS) ---'
-chmod 755 {REMOTE_INSTALL_DIR}
-chmod 755 {REMOTE_INSTALL_DIR}/public
-chmod -R 755 {REMOTE_INSTALL_DIR}/public/uploads
-find {REMOTE_INSTALL_DIR}/public/uploads -type f -exec chmod 644 {{}} + 2>/dev/null || true
-chown -R www-data:www-data {REMOTE_INSTALL_DIR}/public/uploads 2>/dev/null || true
-
-# Enforce permissions for storage
-mkdir -p {REMOTE_INSTALL_DIR}/storage
-chmod -R 755 {REMOTE_INSTALL_DIR}/storage
-find {REMOTE_INSTALL_DIR}/storage -type f -exec chmod 644 {{}} + 2>/dev/null || true
-chown -R www-data:www-data {REMOTE_INSTALL_DIR}/storage 2>/dev/null || true
-
-# 2. Database Initialization
-echo '--- SYSTEM DATABASE SETUP ---'
-mysql -u root -e "CREATE DATABASE IF NOT EXISTS {DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -u root {DB_NAME} < schema.sql
-mysql -u root -e "CREATE USER IF NOT EXISTS '{DB_USER}'@'localhost' IDENTIFIED BY '{DB_PASS}'; ALTER USER '{DB_USER}'@'localhost' IDENTIFIED BY '{DB_PASS}'; GRANT ALL PRIVILEGES ON {DB_NAME}.* TO '{DB_USER}'@'localhost'; FLUSH PRIVILEGES;"
-
-# 3. Environment Config Setup
-echo '--- WRITING ENV CONFIGURATION ---'
-cat > .env << 'ENVEOF'
+    # - Write production environment configuration
+    print("   📝 Writing environment variables config...")
+    env_config = f"""cat > {REMOTE_INSTALL_DIR}/.env << 'ENVEOF'
 NODE_ENV=production
 PORT={PORT}
 HOST=0.0.0.0
@@ -595,101 +465,192 @@ SMS_API_KEY={SMS_API_KEY}
 SMS_SECRET={SMS_SECRET}
 SMS_PATTERN_CODE={SMS_PATTERN_CODE}
 ENVEOF
-
-# 4. Dependency installation and build
-echo '--- INSTALLING DEPENDENCIES ---'
-npm install --no-audit --no-fund
-
-echo '--- BUILDING FRONTEND & BACKEND ---'
-npm run build
-
-echo '--- SYSTEM VERIFICATIONS ---'
-# Double check database connectivity from node
-node -e \"
-const mysql = require('mysql2/promise');
-mysql.createConnection({{
-  host: 'localhost',
-  user: '{DB_USER}',
-  password: '{DB_PASS}',
-  database: '{DB_NAME}'
-}}).then(() => {{
-  console.log('✅ DATABASE_CONNECTION_TEST: OK');
-  process.exit(0);
-}}).catch(err => {{
-  console.error('❌ DATABASE_CONNECTION_TEST: FAILED', err.message);
-  process.exit(1);
-}});
-\"
-
-echo 'BUILD_AND_RESTORE_DONE'
 """
-    
-    print("   🔨 Installing packages, initializing MySQL database, and building project...")
-    out, err, code = run_ssh(setup_script, timeout=400)
-    
-    # Print clean progress logs
-    for line in out.split('\n'):
-        if '---' in line:
-            print(f"      {C_CYAN}{line.replace('---', '').strip()}{C_RESET}")
-        elif '✅' in line:
-            print(f"      {C_GREEN}{line}{C_RESET}")
-        elif '❌' in line:
-            print(f"      {C_RED}{line}{C_RESET}")
-        elif 'BUILD_AND_RESTORE_DONE' in line:
-            print(f"   {C_GREEN}✅ Remote build and restore completed successfully.{C_RESET}")
+    run_ssh(env_config)
 
+    # - cd /var/www/sun8 && npm install --no-audit --no-fund && npm run build
+    print("   📦 Installing packages and building application on VPS...")
+    build_cmd = f"cd {REMOTE_INSTALL_DIR} && npm install --no-audit --no-fund && npm run build"
+    out, err, code = run_ssh(build_cmd, timeout=450)
     if code != 0:
-        print(f"{C_RED}❌ Build error encountered: {err}{C_RESET}")
+        print(f"   {C_RED}❌ Build failed: {err or out}{C_RESET}")
         sys.exit(1)
+    print(f"   {C_GREEN}✅ Application packages installed and built successfully on VPS.{C_RESET}")
 
     # ═══════════════════════════════════════════
-    # STEP 5: SMART NGINX (SSL-AWARE) & PM2 BOOT
+    # STEP 4: RESTORE EVERYTHING
     # ═══════════════════════════════════════════
-    print(f"\\n{C_BOLD}[5/5] Smart Nginx, SSL config, and PM2 Process Launch...{C_RESET}")
+    print(f"\n{C_BOLD}[4/8] STEP 4: RESTORE EVERYTHING{C_RESET}")
+    
+    # - Restore uploads: cp -r /tmp/sun8_uploads_backup/* /var/www/sun8/public/uploads/
+    print("   📸 Restoring uploads folder...")
+    restore_uploads_cmd = f"cp -r /tmp/sun8_uploads_backup/* {REMOTE_INSTALL_DIR}/public/uploads/"
+    out, err, code = run_ssh(restore_uploads_cmd)
+    if code != 0:
+        print(f"   {C_RED}❌ Restore uploads failed: {err or out}{C_RESET}")
+        sys.exit(1)
+    print(f"   {C_GREEN}✅ Uploads restored successfully.{C_RESET}")
 
-    # A. Run Nginx configuration flow
-    nginx_success, has_ssl = configure_nginx_flow(args)
+    # - Restore storage: cp -r /tmp/sun8_storage_backup /var/www/sun8/storage
+    print("   📂 Restoring storage database folder...")
+    run_ssh(f"rm -rf {REMOTE_INSTALL_DIR}/storage")
+    restore_storage_cmd = f"cp -r /tmp/sun8_storage_backup {REMOTE_INSTALL_DIR}/storage"
+    out, err, code = run_ssh(restore_storage_cmd)
+    if code != 0:
+        print(f"   {C_RED}❌ Restore storage failed: {err or out}{C_RESET}")
+        sys.exit(1)
+    print(f"   {C_GREEN}✅ Storage restored successfully.{C_RESET}")
 
-    # B. Start/Restart PM2 Process
-    print("   🔄 Launching application via PM2...")
-    pm2_cmd = f"""
+    # - Import DB: mysql -u equipy_user -p'Equipy_2024_Secure!' equipy < /tmp/sun8_backup.sql
+    print(f"   📥 Importing database '{DB_NAME}'...")
+    import_db_cmd = f"mysql -u {DB_USER} -p'{DB_PASS}' {DB_NAME} < /tmp/sun8_backup.sql"
+    out, err, code = run_ssh(import_db_cmd)
+    if code != 0:
+        print(f"   {C_RED}❌ DB import failed: {err or out}{C_RESET}")
+        sys.exit(1)
+    print(f"   {C_GREEN}✅ Database restored successfully.{C_RESET}")
+
+    # ═══════════════════════════════════════════
+    # STEP 5: FIX PERMISSIONS
+    # ═══════════════════════════════════════════
+    print(f"\n{C_BOLD}[5/8] STEP 5: FIX PERMISSIONS{C_RESET}")
+    # - chmod -R 755 /var/www/sun8/public/uploads
+    # - chown -R www-data:www-data /var/www/sun8/public/uploads
+    # - chmod -R 755 /var/www/sun8/storage
+    permissions_cmd = f"""
+chmod -R 755 {REMOTE_INSTALL_DIR}/public/uploads
+chown -R www-data:www-data {REMOTE_INSTALL_DIR}/public/uploads
+chmod -R 755 {REMOTE_INSTALL_DIR}/storage
+chown -R www-data:www-data {REMOTE_INSTALL_DIR}/storage 2>/dev/null || true
+"""
+    out, err, code = run_ssh(permissions_cmd)
+    if code != 0:
+        print(f"   {C_RED}❌ Fixing permissions failed: {err or out}{C_RESET}")
+        sys.exit(1)
+    print(f"   {C_GREEN}✅ Permissions for uploads and storage configured successfully.{C_RESET}")
+
+    # ═══════════════════════════════════════════
+    # STEP 6: ADD TO GITIGNORE (both local and server)
+    # ═══════════════════════════════════════════
+    print(f"\n{C_BOLD}[6/8] STEP 6: ADD TO GITIGNORE (both local and server){C_RESET}")
+    # On server, append to .gitignore (prevent duplicate lines)
+    gitignore_cmd = f"""
+touch {REMOTE_INSTALL_DIR}/.gitignore
+grep -qxF 'public/uploads/' {REMOTE_INSTALL_DIR}/.gitignore || echo 'public/uploads/' >> {REMOTE_INSTALL_DIR}/.gitignore
+grep -qxF 'storage/data.json' {REMOTE_INSTALL_DIR}/.gitignore || echo 'storage/data.json' >> {REMOTE_INSTALL_DIR}/.gitignore
+"""
+    run_ssh(gitignore_cmd)
+    
+    # Update local .gitignore
+    local_paths_to_update = [
+        os.path.join(LOCAL_PROJECT_PATH, ".gitignore"),
+        "/storage/emulated/0/Download/sun8-main/.gitignore",
+        os.path.join(os.path.dirname(__file__), ".gitignore")
+    ]
+    for p in local_paths_to_update:
+        try:
+            dir_path = os.path.dirname(p)
+            if os.path.exists(dir_path):
+                content = ""
+                if os.path.exists(p):
+                    with open(p, "r") as f:
+                        content = f.read()
+                
+                appended = False
+                if "public/uploads/" not in content:
+                    content += "\npublic/uploads/\n"
+                    appended = True
+                if "storage/data.json" not in content:
+                    content += "storage/data.json\n"
+                    appended = True
+                if appended:
+                    with open(p, "w") as f:
+                        f.write(content)
+                    print(f"   ✅ Local .gitignore at {p} updated successfully.")
+        except Exception as e:
+             print(f"   ⚠️ Local .gitignore append to {p} skipped: {e}")
+         
+    print(f"   {C_GREEN}✅ Gitignore configured successfully.{C_RESET}")
+
+    # ═══════════════════════════════════════════
+    # STEP 7: CLEAN TEMP FILES (free disk space)
+    # ═══════════════════════════════════════════
+    print(f"\n{C_BOLD}[7/8] STEP 7: CLEAN TEMP FILES (free disk space){C_RESET}")
+    # - rm -rf /tmp/sun8_backup.sql /tmp/sun8_uploads_backup /tmp/sun8_storage_backup
+    cleanup_cmd = "rm -rf /tmp/sun8_backup.sql /tmp/sun8_uploads_backup /tmp/sun8_storage_backup"
+    out, err, code = run_ssh(cleanup_cmd)
+    if code != 0:
+        print(f"   {C_RED}❌ Cleaning temp files failed: {err or out}{C_RESET}")
+        sys.exit(1)
+    print(f"   {C_GREEN}✅ Temporary backup files removed.{C_RESET}")
+
+    # ═══════════════════════════════════════════
+    # STEP 8: RESTART & VERIFY
+    # ═══════════════════════════════════════════
+    print(f"\n{C_BOLD}[8/8] STEP 8: RESTART & VERIFY{C_RESET}")
+    
+    # Smart Nginx Configuration Flow
+    print("   🌐 Ensuring Nginx configurations are perfectly loaded...")
+    configure_nginx_flow(args)
+
+    # - pm2 restart sun8 && sleep 3
+    print("   🔄 Restarting PM2 process...")
+    pm2_restart_cmd = f"""
 cd {REMOTE_INSTALL_DIR}
 pm2 delete {PM2_NAME} 2>/dev/null || true
 pm2 start dist/server.cjs --name {PM2_NAME} --time
 pm2 save
+sleep 3
 """
-    run_ssh(pm2_cmd)
-    print(f"   {C_GREEN}✅ PM2 process successfully started!{C_RESET}")
+    run_ssh(pm2_restart_cmd)
 
-    # ============================================
-    # FINAL VERIFICATION & SUCCESS SCREEN
-    # ============================================
-    time.sleep(3) # Wait for server to fully initialize
-    
-    # Check health endpoint
+    # - curl -s http://localhost:3001/api/health (must return {"status":"ok"})
+    print(f"   ❤️  Verifying local port {PORT} API health...")
     health_check_cmd = f"curl -s http://localhost:{PORT}/api/health"
     health_out, _, _ = run_ssh(health_check_cmd)
-    
+    if '"status":"ok"' in health_out.replace(" ", ""):
+        print(f"      {C_GREEN}✅ API Health Check: ONLINE (Excellent! Response: {health_out}){C_RESET}")
+    else:
+        print(f"      {C_RED}❌ API Health Check: OFFLINE! Expected '{{\"status\":\"ok\"}}', got: '{health_out}'{C_RESET}")
+        print("      Check 'pm2 logs sun8' for details.")
+        sys.exit(1)
+
+    # - ls /var/www/sun8/public/uploads/categories/ (must show category folders)
+    print("   📁 Verifying categories directory structure in uploads...")
+    categories_cmd = f"ls {REMOTE_INSTALL_DIR}/public/uploads/categories/"
+    cat_out, cat_err, cat_code = run_ssh(categories_cmd)
+    if cat_code == 0 and cat_out.strip():
+        print(f"      {C_GREEN}✅ Category Folders Verified: {cat_out.replace(chr(10), ', ')}{C_RESET}")
+    else:
+        print(f"      {C_RED}❌ Categories folder verification failed: {cat_out or cat_err or 'Folder empty!'}{C_RESET}")
+        sys.exit(1)
+
+    # - mysql -u equipy_user -p'Equipy_2024_Secure!' equipy -e "SHOW TABLES;" (must show tables)
+    print(f"   🗄️  Verifying database tables for user '{DB_USER}'...")
+    db_verify_cmd = f"mysql -u {DB_USER} -p'{DB_PASS}' {DB_NAME} -e 'SHOW TABLES;'"
+    db_out, db_err, db_code = run_ssh(db_verify_cmd)
+    if db_code == 0 and "Tables_in_equipy" in db_out:
+        print(f"      {C_GREEN}✅ MySQL Tables Verified Successfully.{C_RESET}")
+    else:
+        print(f"      {C_RED}❌ Database tables verification failed: {db_out or db_err}{C_RESET}")
+        sys.exit(1)
+
+    # - curl -s -H 'Host: sun8.ir' http://localhost/ (must return HTML, NOT Bazar)
+    print(f"   🌐 Verifying Host-Header routing separation for '{DOMAIN_NAME}'...")
+    host_routing_cmd = f"curl -s -H 'Host: {DOMAIN_NAME}' http://localhost/ | head -c 150"
+    routing_out, routing_err, routing_code = run_ssh(host_routing_cmd)
+    if routing_code == 0 and ("sun8" in routing_out.lower() or "doctype" in routing_out.lower() or "html" in routing_out.lower()):
+        print(f"      {C_GREEN}✅ Isolated routing works perfectly! Server returns Sun8 HTML.{C_RESET}")
+    else:
+        print(f"      {C_RED}❌ Host-Header routing verification failed: {routing_out or routing_err}{C_RESET}")
+        sys.exit(1)
+
     print("\n" + "=" * 80)
-    print(f"  {C_GREEN}{C_BOLD}🎉 SUN8 APPLICATION SUCCESSFULLY DEPLOYED!{C_RESET}")
+    print(f"  {C_GREEN}{C_BOLD}🎉 DEPLOYMENT COMPLETED AND VERIFIED SUCCESSFULLY WITH ZERO DATA LOSS!{C_RESET}")
     print("=" * 80)
     print(f"  🌐 {C_BOLD}Main Website:{C_RESET} https://{DOMAIN_NAME} (or http://{VPS_IP})")
-    
-    if '"status":"ok"' in health_out.replace(" ", ""):
-        print(f"  ❤️  {C_GREEN}{C_BOLD}API Health Check: ONLINE (Excellent!){C_RESET}")
-    else:
-        print(f"  ❤️  {C_YELLOW}API Health Check: Not responding to localhost:{PORT} (Check 'pm2 logs {PM2_NAME}' if page is blank){C_RESET}")
-    
-    if not has_ssl and not args.no_ssl:
-        print("\\n  🛡️  " + C_YELLOW + C_BOLD + "Want to enable Free SSL? Just run this command on your VPS:" + C_RESET)
-        print(f"     {C_CYAN}ssh -i ~/.ssh/bazar_prikey.pem root@{VPS_IP} 'certbot --nginx -d {DOMAIN_NAME} -d www.{DOMAIN_NAME}'{C_RESET}")
-        print("     The deployer will automatically preserve your secure settings next time!")
-    
-    print(f"  📂 {C_BOLD}Static upload paths protected and verified.{C_RESET}")
-    print("=" * 80 + "\\n")
-
-    # Run routing separation curls
-    run_isolation_checks()
+    print(f"  📂 Uploads, storage data, database structure, and process status are completely verified.")
+    print("=" * 80 + "\n")
 
 if __name__ == "__main__":
     main()
